@@ -1,11 +1,15 @@
-import 'dart:typed_data'; // Required for Uint8List
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart'; // For picking files
-import 'package:rive/rive.dart'; // The core Rive package
+import 'package:file_picker/file_picker.dart';
+import 'package:rive/rive.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await RiveFile.initialize();
+  try {
+    await RiveFile.initialize();
+  } catch (e) {
+    print("Failed to initialize Rive: $e");
+  }
   runApp(const MyApp());
 }
 
@@ -46,24 +50,27 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
   RiveFile? _riveFile;
   Artboard? _artboard;
   StateMachineController? _stateMachineController;
+  SimpleAnimation? _simpleAnimationController;
   String? _selectedStateMachineName;
+  String? _selectedAnimationName;
   final List<SMIInput> _inputs = [];
   bool _isLoading = false;
   String? _errorMessage;
 
-  // --- File Picking ---
   Future<void> _pickFile() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
-      // Reset previous state
       _fileName = null;
       _fileBytes = null;
       _riveFile = null;
       _artboard = null;
       _stateMachineController?.dispose();
+      _simpleAnimationController?.dispose();
       _stateMachineController = null;
+      _simpleAnimationController = null;
       _selectedStateMachineName = null;
+      _selectedAnimationName = null;
       _inputs.clear();
     });
 
@@ -74,25 +81,39 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
         withData: true,
       );
 
-      if (result != null && result.files.single.bytes != null) {
-        _fileName = result.files.single.name;
+      if (result?.files.single.bytes != null) {
+        _fileName = result!.files.single.name;
         _fileBytes = result.files.single.bytes!;
         _loadRiveFile();
       } else {
-        setState(() => _isLoading = false);
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
       }
     } catch (e) {
       print("File picking/reading error: $e");
-      setState(() {
-        _errorMessage = "Error picking or reading file: $e";
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = "Error picking or reading file: ${e.toString()}";
+          _isLoading = false;
+        });
+      }
     }
   }
 
   void _loadRiveFile() {
-    if (_fileBytes == null) return;
+    if (_fileBytes == null) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = "File data is missing.";
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+    ;
 
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -100,48 +121,71 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
 
     try {
       _riveFile = RiveFile.import(ByteData.view(_fileBytes!.buffer));
-
-      _artboard = _riveFile?.mainArtboard.instance(); // Create an instance
+      _artboard = _riveFile?.mainArtboard.instance();
 
       if (_artboard == null) {
         throw Exception("Could not load the main artboard from the Rive file.");
       }
 
+      _resetControllersAndSelection();
+
       if (_artboard!.stateMachines.isNotEmpty) {
         _selectedStateMachineName = _artboard!.stateMachines.first.name;
-        _initStateMachineController(); // Initialize controller for the first SM
-      } else {
-        _stateMachineController?.dispose();
-        _stateMachineController = null;
-        _inputs.clear();
-        _selectedStateMachineName = null;
+        _initStateMachineController();
+      } else if (_artboard!.animations.isNotEmpty) {
+        _selectedAnimationName = _artboard!.animations.first.name;
+        _initSimpleAnimationController();
       }
 
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     } catch (e) {
       print("Rive file loading error: $e");
-      setState(() {
-        _errorMessage = "Error loading Rive file: $e";
-        _riveFile = null;
-        _artboard = null;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = "Error loading Rive file: ${e.toString()}";
+          _riveFile = null;
+          _artboard = null;
+          _isLoading = false;
+        });
+      }
     }
   }
 
-  void _initStateMachineController() {
-    if (_artboard == null || _selectedStateMachineName == null) return;
+  void _resetControllersAndSelection() {
+    _stateMachineController?.dispose();
+    _simpleAnimationController?.dispose();
+    _stateMachineController = null;
+    _simpleAnimationController = null;
+    _inputs.clear();
+    _selectedStateMachineName = null;
+    _selectedAnimationName = null;
+  }
 
+  void _initStateMachineController() {
+    if (!mounted || _artboard == null || _selectedStateMachineName == null)
+      return;
+
+    _simpleAnimationController?.dispose();
+    _simpleAnimationController = null;
     _stateMachineController?.dispose();
     _inputs.clear();
 
-    var controller = StateMachineController.fromArtboard(
-      _artboard!,
-      _selectedStateMachineName!,
-      onStateChange: (stateMachineName, stateName) {
-        print('State Changed: $stateMachineName -> $stateName');
-      },
-    );
+    StateMachineController? controller;
+    try {
+      controller = StateMachineController.fromArtboard(
+        _artboard!,
+        _selectedStateMachineName!,
+        onStateChange: (stateMachineName, stateName) {
+          print('State Changed: $stateMachineName -> $stateName');
+        },
+      );
+    } catch (e) {
+      print("Error creating StateMachineController: $e");
+      _errorMessage =
+          "Error creating controller for '$_selectedStateMachineName': ${e.toString()}";
+    }
 
     if (controller != null) {
       _artboard!.addController(controller);
@@ -149,8 +193,36 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
       _inputs.addAll(controller.inputs);
     } else {
       _stateMachineController = null;
+      if (_errorMessage == null) {
+        _errorMessage =
+            "Could not initialize State Machine: '$_selectedStateMachineName'";
+      }
+    }
+
+    setState(() {});
+  }
+
+  void _initSimpleAnimationController() {
+    if (!mounted || _artboard == null || _selectedAnimationName == null) return;
+
+    _stateMachineController?.dispose();
+    _stateMachineController = null;
+    _inputs.clear();
+    _simpleAnimationController?.dispose();
+
+    SimpleAnimation? controller;
+    try {
+      controller = SimpleAnimation(
+        _selectedAnimationName!,
+        autoplay: true,
+      );
+      _artboard!.addController(controller);
+      _simpleAnimationController = controller;
+    } catch (e) {
+      print("Error creating SimpleAnimation controller: $e");
+      _simpleAnimationController = null;
       _errorMessage =
-          "Could not find or initialize State Machine: '$_selectedStateMachineName'";
+          "Error creating animation controller for '$_selectedAnimationName': ${e.toString()}";
     }
 
     setState(() {});
@@ -159,6 +231,7 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
   @override
   void dispose() {
     _stateMachineController?.dispose();
+    _simpleAnimationController?.dispose();
     super.dispose();
   }
 
@@ -171,7 +244,7 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
           IconButton(
             icon: const Icon(Icons.folder_open),
             tooltip: 'Pick Rive File',
-            onPressed: _pickFile,
+            onPressed: _isLoading ? null : _pickFile,
           ),
         ],
       ),
@@ -186,13 +259,32 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
     if (_errorMessage != null) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Text(
-            'Error: $_errorMessage',
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-            textAlign: TextAlign.center,
-          ),
-        ),
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.error_outline,
+                    color: Theme.of(context).colorScheme.error, size: 40),
+                const SizedBox(height: 16),
+                Text(
+                  'Error:',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(color: Theme.of(context).colorScheme.error),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _errorMessage!,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(color: Theme.of(context).colorScheme.error),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            )),
       );
     }
     if (_artboard == null) {
@@ -207,15 +299,12 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
         Expanded(
           flex: 2,
           child: Container(
-            color:
-                Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
-            child: _artboard != null
-                ? Rive(
-                    artboard: _artboard!,
-                    fit: BoxFit.contain,
-                  )
-                : const Center(child: Text("Artboard could not be loaded.")),
-          ),
+              color:
+                  Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+              child: Rive(
+                artboard: _artboard!,
+                fit: BoxFit.contain,
+              )),
         ),
         Expanded(
           flex: 1,
@@ -237,8 +326,11 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
                 ),
                 const Divider(height: 24),
                 _buildStateMachineSelector(),
+                const SizedBox(height: 16),
+                _buildAnimationSelector(),
                 const Divider(height: 24),
-                if (_stateMachineController != null) ...[
+                if (_selectedStateMachineName != null &&
+                    _stateMachineController != null) ...[
                   Text(
                     'Inputs for "$_selectedStateMachineName":',
                     style: Theme.of(context).textTheme.titleMedium,
@@ -250,17 +342,31 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
                     ..._inputs
                         .map((input) => _buildInputControl(input))
                         .toList(),
-                ] else if (_selectedStateMachineName != null) ...[
+                ] else if (_selectedAnimationName != null) ...[
                   Text(
-                    'Inputs for "$_selectedStateMachineName":',
+                    'Playing Animation:',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                      'State machine selected, but no controller active or no inputs found.'),
+                  Text('$_selectedAnimationName'),
+                  const SizedBox(height: 8),
+                  if (_simpleAnimationController != null)
+                    ElevatedButton.icon(
+                        icon: Icon(_simpleAnimationController!.isActive
+                            ? Icons.pause
+                            : Icons.play_arrow),
+                        label: Text(_simpleAnimationController!.isActive
+                            ? 'Pause'
+                            : 'Play'),
+                        onPressed: () {
+                          if (mounted && _simpleAnimationController != null) {
+                            setState(() =>
+                                _simpleAnimationController!.isActive =
+                                    !_simpleAnimationController!.isActive);
+                          }
+                        }),
                 ],
                 const SizedBox(height: 20),
-                _buildOtherInfo(),
               ],
             ),
           ),
@@ -270,24 +376,36 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
   }
 
   Widget _buildStateMachineSelector() {
-    final stateMachineNames =
+    final allStateMachineNames =
         _artboard?.stateMachines.map((sm) => sm.name).toList() ?? [];
+    final uniqueStateMachineNames = allStateMachineNames.toSet().toList();
 
-    if (stateMachineNames.isEmpty) {
-      return const Text('No State Machines found in this Artboard.');
+    if (uniqueStateMachineNames.isEmpty) {
+      return const Text('No State Machines found.');
+    }
+
+    bool isSelectedValueDuplicatedSM = false;
+    if (_selectedStateMachineName != null) {
+      final count = allStateMachineNames
+          .where((name) => name == _selectedStateMachineName)
+          .length;
+      isSelectedValueDuplicatedSM = count > 1;
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Select State Machine:',
-            style: Theme.of(context).textTheme.titleSmall),
+            style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         DropdownButton<String>(
-          value: _selectedStateMachineName,
+          value: isSelectedValueDuplicatedSM ? null : _selectedStateMachineName,
           isExpanded: true,
-          hint: const Text('Select a State Machine'),
-          items: stateMachineNames.map((name) {
+          hint: Text(
+              isSelectedValueDuplicatedSM && _selectedStateMachineName != null
+                  ? '(Duplicate: $_selectedStateMachineName)'
+                  : '(Select to activate)'),
+          items: uniqueStateMachineNames.map((name) {
             return DropdownMenuItem<String>(
               value: name,
               child: Text(name),
@@ -295,13 +413,78 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
           }).toList(),
           onChanged: (String? newValue) {
             if (newValue != null && newValue != _selectedStateMachineName) {
-              setState(() {
-                _selectedStateMachineName = newValue;
-
-                _initStateMachineController();
-              });
+              if (mounted) {
+                setState(() {
+                  _selectedAnimationName = null;
+                  _selectedStateMachineName = newValue;
+                  _initStateMachineController();
+                });
+              }
             }
           },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAnimationSelector() {
+    final allAnimationNames =
+        _artboard?.animations.map((anim) => anim.name).toList() ?? [];
+    final uniqueAnimationNames = allAnimationNames.toSet().toList();
+
+    if (uniqueAnimationNames.isEmpty) {
+      return const Text('No Simple Animations found.');
+    }
+
+    bool isSelectedValueDuplicated = false;
+    if (_selectedAnimationName != null) {
+      final count = allAnimationNames
+          .where((name) => name == _selectedAnimationName)
+          .length;
+      isSelectedValueDuplicated = count > 1;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Select Simple Animation:',
+            style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        DropdownButton<String>(
+          value: isSelectedValueDuplicated ? null : _selectedAnimationName,
+          isExpanded: true,
+          hint: Text(isSelectedValueDuplicated && _selectedAnimationName != null
+              ? '(Duplicate: $_selectedAnimationName)'
+              : '(Select to activate)'),
+          items: uniqueAnimationNames.map((name) {
+            return DropdownMenuItem<String>(
+              value: name,
+              child: Text(name),
+            );
+          }).toList(),
+          onChanged: (String? newValue) {
+            if (newValue != null && newValue != _selectedAnimationName) {
+              if (mounted) {
+                setState(() {
+                  _selectedStateMachineName = null;
+                  _selectedAnimationName = newValue;
+                  _initSimpleAnimationController();
+                });
+              }
+            }
+          },
+        ),
+        const SizedBox(height: 10),
+        Text('Animations List (${allAnimationNames.length}):',
+            style: Theme.of(context).textTheme.labelSmall),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: allAnimationNames
+              .map((name) => Padding(
+                    padding: const EdgeInsets.only(left: 8.0, top: 4.0),
+                    child: Text("- $name"),
+                  ))
+              .toList(),
         ),
       ],
     );
@@ -327,9 +510,9 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
       maxVal = 100.0;
     } else if (input.value > 100.0) {
       minVal = 0.0;
-      maxVal = input.value * 2;
+      maxVal = input.value * 1.5;
     } else if (input.value < 0.0) {
-      minVal = input.value * 2;
+      minVal = input.value * 1.5;
       maxVal = 0.0;
     }
     final currentVal = input.value.clamp(minVal, maxVal);
@@ -347,9 +530,11 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
             divisions: 100,
             label: input.value.toStringAsFixed(2),
             onChanged: (double value) {
-              setState(() {
-                input.value = value;
-              });
+              if (mounted) {
+                setState(() {
+                  input.value = value;
+                });
+              }
             },
           ),
         ],
@@ -367,9 +552,11 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
           Switch(
             value: input.value,
             onChanged: (bool value) {
-              setState(() {
-                input.value = value;
-              });
+              if (mounted) {
+                setState(() {
+                  input.value = value;
+                });
+              }
             },
           ),
         ],
@@ -382,41 +569,29 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: ElevatedButton(
         onPressed: () {
-          input.fire();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Triggered: ${input.name}'),
-                duration: const Duration(seconds: 1)),
-          );
+          try {
+            input.fire();
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                    content: Text('Triggered: ${input.name}'),
+                    duration: const Duration(seconds: 1)),
+              );
+            }
+          } catch (e) {
+            print("Error firing trigger ${input.name}: $e");
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                    content:
+                        Text('Error firing ${input.name}: ${e.toString()}'),
+                    duration: const Duration(seconds: 2)),
+              );
+            }
+          }
         },
         child: Text('Fire: ${input.name} (Trigger)'),
       ),
-    );
-  }
-
-  Widget _buildOtherInfo() {
-    final animationNames =
-        _artboard?.animations.map((anim) => anim.name).toList() ?? [];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Divider(height: 24),
-        Text('Other Information:',
-            style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Text('Animations (${animationNames.length}):'),
-        if (animationNames.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(left: 8.0, top: 4.0),
-            child: Text(animationNames.join(', ')),
-          )
-        else
-          const Padding(
-            padding: EdgeInsets.only(left: 8.0, top: 4.0),
-            child: Text('No simple animations found.'),
-          ),
-      ],
     );
   }
 }
