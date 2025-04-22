@@ -32,7 +32,7 @@ class MyApp extends StatelessWidget {
           backgroundColor: ColorScheme.fromSeed(
             seedColor: seedColor,
             brightness: Brightness.dark,
-          ).surfaceContainerHighest, // Slightly different AppBar background
+          ).surfaceContainerHighest,
         ),
         cardTheme: CardTheme(
           elevation: 1,
@@ -56,8 +56,7 @@ class MyApp extends StatelessWidget {
           ),
         )),
         sliderTheme: SliderThemeData(
-          showValueIndicator:
-              ShowValueIndicator.always, // Keep indicator visible
+          showValueIndicator: ShowValueIndicator.always,
         ),
       ),
       home: const RiveViewerPage(),
@@ -160,7 +159,7 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
         _selectedAnimationName = _artboard!.animations.first.name;
         _initSimpleAnimationController();
       } else {
-        _resetControllersAndSelection(); // Ensure clean state if no controllers
+        _resetControllersAndSelection();
       }
 
       if (mounted) {
@@ -180,8 +179,18 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
   }
 
   void _resetControllersAndSelection() {
+    if (_artboard != null) {
+      if (_stateMachineController != null) {
+        _artboard!.removeController(_stateMachineController!);
+      }
+      if (_simpleAnimationController != null) {
+        _artboard!.removeController(_simpleAnimationController!);
+      }
+    }
+
     _stateMachineController?.dispose();
     _simpleAnimationController?.dispose();
+
     _stateMachineController = null;
     _simpleAnimationController = null;
     _inputs.clear();
@@ -193,10 +202,18 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
     if (!mounted || _artboard == null || _selectedStateMachineName == null)
       return;
 
-    _simpleAnimationController?.dispose();
-    _simpleAnimationController = null;
-    _stateMachineController?.dispose();
+    if (_simpleAnimationController != null) {
+      _artboard!.removeController(_simpleAnimationController!);
+      _simpleAnimationController!.dispose();
+      _simpleAnimationController = null;
+    }
+
+    if (_stateMachineController != null) {
+      _artboard!.removeController(_stateMachineController!);
+      _stateMachineController!.dispose();
+    }
     _inputs.clear();
+    _stateMachineController = null;
 
     StateMachineController? controller;
     try {
@@ -229,10 +246,18 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
   void _initSimpleAnimationController() {
     if (!mounted || _artboard == null || _selectedAnimationName == null) return;
 
-    _stateMachineController?.dispose();
-    _stateMachineController = null;
-    _inputs.clear();
-    _simpleAnimationController?.dispose();
+    if (_stateMachineController != null) {
+      _artboard!.removeController(_stateMachineController!);
+      _stateMachineController!.dispose();
+      _stateMachineController = null;
+      _inputs.clear();
+    }
+
+    if (_simpleAnimationController != null) {
+      _artboard!.removeController(_simpleAnimationController!);
+      _simpleAnimationController!.dispose();
+    }
+    _simpleAnimationController = null;
 
     SimpleAnimation? controller;
     try {
@@ -344,27 +369,25 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          flex: 3, // Give Rive view slightly more space
+          flex: 3,
           child: Container(
               margin: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 color: colorScheme.surfaceContainer,
               ),
-              clipBehavior:
-                  Clip.antiAlias, // Ensures Rive respects rounded corners
+              clipBehavior: Clip.antiAlias,
               child: Rive(
                 artboard: _artboard!,
                 fit: BoxFit.contain,
               )),
         ),
         Expanded(
-          flex: 2, // Controls panel space
+          flex: 2,
           child: SingleChildScrollView(
             padding: const EdgeInsets.only(top: 8, bottom: 8, right: 8),
             child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.stretch, // Make cards fill width
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Card(
                   child: Padding(
@@ -698,9 +721,7 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
         icon: const Icon(Icons.bolt_outlined, size: 18),
         label: Text('Fire: ${input.name}'),
         style: FilledButton.styleFrom(
-          visualDensity: VisualDensity.compact, // Make button slightly smaller
-          // backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
-          // foregroundColor: Theme.of(context).colorScheme.onTertiaryContainer,
+          visualDensity: VisualDensity.compact,
         ),
         onPressed: () {
           try {
@@ -710,7 +731,7 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
                 SnackBar(
                   content: Text('Triggered: ${input.name}'),
                   duration: const Duration(milliseconds: 800),
-                  behavior: SnackBarBehavior.floating, // More modern look
+                  behavior: SnackBarBehavior.floating,
                 ),
               );
             }
