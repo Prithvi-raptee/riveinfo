@@ -18,7 +18,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final seedColor = Colors.deepPurple;
+    final seedColor = Colors.blueAccent;
     return MaterialApp(
       title: 'Rive File Viewer',
       themeMode: ThemeMode.dark,
@@ -179,15 +179,6 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
   }
 
   void _resetControllersAndSelection() {
-    if (_artboard != null) {
-      if (_stateMachineController != null) {
-        _artboard!.removeController(_stateMachineController!);
-      }
-      if (_simpleAnimationController != null) {
-        _artboard!.removeController(_simpleAnimationController!);
-      }
-    }
-
     _stateMachineController?.dispose();
     _simpleAnimationController?.dispose();
 
@@ -199,21 +190,26 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
   }
 
   void _initStateMachineController() {
-    if (!mounted || _artboard == null || _selectedStateMachineName == null)
+    if (!mounted || _riveFile == null || _selectedStateMachineName == null)
       return;
 
-    if (_simpleAnimationController != null) {
-      _artboard!.removeController(_simpleAnimationController!);
-      _simpleAnimationController!.dispose();
-      _simpleAnimationController = null;
-    }
-
-    if (_stateMachineController != null) {
-      _artboard!.removeController(_stateMachineController!);
-      _stateMachineController!.dispose();
-    }
+    _simpleAnimationController?.dispose();
+    _simpleAnimationController = null;
+    _stateMachineController?.dispose();
     _inputs.clear();
     _stateMachineController = null;
+
+    _artboard = _riveFile!.mainArtboard.instance();
+    if (_artboard == null) {
+      print("Error: Could not get a fresh artboard instance.");
+      if (mounted) {
+        setState(() {
+          _errorMessage = "Failed to re-initialize artboard.";
+          _isLoading = false;
+        });
+      }
+      return;
+    }
 
     StateMachineController? controller;
     try {
@@ -244,20 +240,25 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
   }
 
   void _initSimpleAnimationController() {
-    if (!mounted || _artboard == null || _selectedAnimationName == null) return;
+    if (!mounted || _riveFile == null || _selectedAnimationName == null) return;
 
-    if (_stateMachineController != null) {
-      _artboard!.removeController(_stateMachineController!);
-      _stateMachineController!.dispose();
-      _stateMachineController = null;
-      _inputs.clear();
-    }
-
-    if (_simpleAnimationController != null) {
-      _artboard!.removeController(_simpleAnimationController!);
-      _simpleAnimationController!.dispose();
-    }
+    _stateMachineController?.dispose();
+    _stateMachineController = null;
+    _inputs.clear();
+    _simpleAnimationController?.dispose();
     _simpleAnimationController = null;
+
+    _artboard = _riveFile!.mainArtboard.instance();
+    if (_artboard == null) {
+      print("Error: Could not get a fresh artboard instance.");
+      if (mounted) {
+        setState(() {
+          _errorMessage = "Failed to re-initialize artboard.";
+          _isLoading = false;
+        });
+      }
+      return;
+    }
 
     SimpleAnimation? controller;
     try {
@@ -667,7 +668,8 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
       minVal = input.value * 1.5;
       maxVal = 0.0;
     }
-    final currentVal = input.value.clamp(minVal, maxVal);
+
+    final currentSliderVal = input.value.clamp(minVal, maxVal);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6.0),
@@ -677,10 +679,12 @@ class _RiveViewerPageState extends State<RiveViewerPage> {
           Text('${input.name}: ${input.value.toStringAsFixed(2)}',
               style: Theme.of(context).textTheme.bodyMedium),
           Slider(
-            value: currentVal,
+            value: currentSliderVal,
             min: minVal,
             max: maxVal,
-            divisions: 100,
+            divisions: (maxVal - minVal > 0)
+                ? ((maxVal - minVal) * 10).round().clamp(1, 200)
+                : null,
             label: input.value.toStringAsFixed(2),
             onChanged: (double value) {
               if (mounted) {
