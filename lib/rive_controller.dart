@@ -249,17 +249,21 @@ class RiveController extends ChangeNotifier {
   void _initSimpleAnimationController() {
     if (_artboard == null || _selectedAnimationName == null) return;
 
-    _stateMachineController?.dispose(); // Dispose SM if switching
+    // --- Dispose existing controllers ---
+    _stateMachineController?.dispose();
     _stateMachineController = null;
     _inputs.clear();
-    _numberInputRanges.clear(); // Clear ranges when switching to animation
+    // Clear number range state when switching away from state machines
+    _numberInputRanges.clear();
     _minControllers.forEach((_, ctrl) => ctrl.dispose());
     _maxControllers.forEach((_, ctrl) => ctrl.dispose());
     _minControllers.clear();
     _maxControllers.clear();
     _simpleAnimationController?.dispose(); // Dispose previous animation
 
-    // Get a fresh instance for the new animation controller
+    // --- Re-initialize artboard instance ---
+    // It's often necessary to get a fresh instance when changing animation controllers
+    // to ensure the new controller applies correctly without interference.
     _artboard = _riveFile!.mainArtboard.instance();
     if (_artboard == null) {
       debugPrint(
@@ -268,21 +272,30 @@ class RiveController extends ChangeNotifier {
       return;
     }
 
+    // --- Create and add the new animation controller ---
     SimpleAnimation? controller;
     try {
       controller = SimpleAnimation(
         _selectedAnimationName!,
-        autoplay: true, // Default to autoplaying simple animations
+        autoplay: true, // Keep autoplay true for default behavior
       );
       _artboard!.addController(controller);
-      _simpleAnimationController = controller;
+
+      // --- ADD THIS LINE ---
+      // Explicitly set the controller to active to ensure it starts playing
+      // and the UI reflects the correct initial state immediately.
+      controller.isActive = true;
+      // --- END OF ADDED LINE ---
+
+      _simpleAnimationController = controller; // Assign the new controller
+      clearError(); // Clear any previous error on success
     } catch (e) {
       debugPrint(
           "Error creating SimpleAnim controller '$_selectedAnimationName': $e");
       _simpleAnimationController = null;
       _setError("Init Anim '$_selectedAnimationName' Error: ${e.toString()}");
     }
-    // Notify handled by selectAnimation or _setError
+    // The calling method (selectAnimation) handles notifyListeners()
   }
 
   void _onStateChange(String machineName, String stateName) {

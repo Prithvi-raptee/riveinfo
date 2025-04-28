@@ -1,11 +1,11 @@
 {
-    "name": "riveinfo",
-    "short_name": "riveinfo",
+    "name": "RiveForge",
+    "short_name": "RiveForge",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Run, check, and test Rive (.riv) files easily on your desktop.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -1,0 +1,32 @@
+package_rename_config:
+  android:
+    app_name: RiveForge
+    package_name: com.raptee.riveforge
+    override_old_package: com.raptee.riveforge
+    lang: kotlin
+
+  ios:
+    app_name: RiveForge
+    bundle_name: RiveForge
+    package_name: com.raptee.riveforge
+
+  linux:
+    app_name: RiveForge
+    package_name: com.raptee.riveforge
+    exe_name: riveforge
+
+  macos:
+    app_name: RiveForge
+    package_name: com.raptee.riveforge
+    copyright_notice: © 2025 Raptee
+
+  web:
+    app_name: RiveForge
+    short_app_name: RiveForge
+    description: Run, check, and test Rive (.riv) files easily on your desktop.
+
+  windows:
+    app_name: RiveForge
+    organization: Raptee
+    copyright_notice: © 2025 Raptee
+    exe_name: riveforge
